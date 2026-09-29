@@ -117,7 +117,7 @@ export class Map {
 		this.unload()
 
 		let settingsPromise = this.loadSettings(tileCacheHash);
-		let textureFilePromise = this.loadTexturesFile(tileCacheHash);
+		let textureFilePromise = this.loadTexturesFile();
 
 		this.lowresMaterial = this.createLowresMaterial(lowresVertexShader, lowresFragmentShader, uniforms);
 
@@ -277,7 +277,7 @@ export class Map {
 	 * Loads the textures.json file for this map
 	 * @returns {Promise<Object>}
 	 */
-	loadTexturesFile(tileCacheHash) {
+	loadTexturesFile() {
 		alert(this.events, `Loading textures for map '${this.data.id}'...`, "fine");
 
 		// textures.json changes far less frequently than map tiles. Keep its URL stable so
