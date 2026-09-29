@@ -328,7 +328,9 @@ export class Map {
 			})
 			.catch(error => {
 				textureError = error;
-				alert(this.events, `Failed to prepare textures for map '${this.data.id}'. High-resolution tiles will be unavailable.`, "warning");
+				if (!disposed) {
+					alert(this.events, `Failed to prepare textures for map '${this.data.id}'. High-resolution tiles will be unavailable.`, "warning");
+				}
 				return null;
 			});
 
