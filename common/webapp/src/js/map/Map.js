@@ -299,14 +299,14 @@ export class Map {
 	 * @param vertexShader {string}
 	 * @param fragmentShader {string}
 	 * @param uniforms {object}
-	 * @param textures {{
+	 * @param texturesPromise {Promise<Array<{
 	 *     resourcePath: string,
 	 *     color: number[],
 	 *     halfTransparent: boolean,
 	 *     texture: string,
 	 *     animation: any | undefined
-	 * }[]} the textures-data
-	 * @returns {ShaderMaterial[]} the hires Material (array because its a multi-material)
+	 * }>>} asynchronously loaded texture metadata
+	 * @returns {ShaderMaterial[]} sparse lazy multi-material array
 	 */
 	createHiresMaterial(vertexShader, fragmentShader, uniforms, texturesPromise) {
 		// Keep an index-compatible material array immediately so the map can start
