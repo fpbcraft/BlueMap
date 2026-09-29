@@ -278,17 +278,21 @@ export class Map {
 	 * @returns {Promise<Object>}
 	 */
 	loadTexturesFile(tileCacheHash) {
-		return new Promise((resolve, reject) => {
-			alert(this.events, `Loading textures for map '${this.data.id}'...`, "fine");
+		alert(this.events, `Loading textures for map '${this.data.id}'...`, "fine");
 
-			let loader = new FileLoader();
-			loader.setResponseType("json");
-			loader.load(this.data.texturesUrl + "?" + tileCacheHash,
-				resolve,
-				() => {},
-				() => reject(`Failed to load the textures.json for map: ${this.data.id}`)
-			)
-		});
+		// textures.json changes far less frequently than map tiles. Keep its URL stable so
+		// the browser can reuse the cached body, but explicitly revalidate it so resource-
+		// pack changes are picked up immediately through ETag/Last-Modified.
+		return fetch(this.data.texturesUrl, {cache: "no-cache"})
+			.then(response => {
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+				return response.json();
+			})
+			.catch(() => {
+				throw new Error(`Failed to load the textures.json for map: ${this.data.id}`);
+			});
 	}
 
 	/**
@@ -306,10 +310,20 @@ export class Map {
 	 * @returns {ShaderMaterial[]} the hires Material (array because its a multi-material)
 	 */
 	createHiresMaterial(vertexShader, fragmentShader, uniforms, textures) {
-		let materials = [];
 		if (!Array.isArray(textures)) throw new Error("Invalid texture.json: 'textures' is not an array!")
-		for (let i = 0; i < textures.length; i++) {
-			let textureSettings = textures[i];
+
+		// Keep the material array index-compatible with the PRBM material indices, but
+		// don't decode base64 PNGs or instantiate Three.js materials until a loaded tile
+		// actually references them.
+		let materials = new Array(textures.length);
+		let hydrated = 0;
+
+		let hydrateMaterial = index => {
+			if (!Number.isInteger(index) || index < 0 || index >= textures.length) index = 0;
+			if (materials[index]) return materials[index];
+
+			let textureSettings = textures[index] || textures[0];
+			if (!textureSettings) throw new Error("textures.json does not contain a fallback texture");
 
 			let color = textureSettings.color;
 			if (!Array.isArray(color) || color.length < 4){
@@ -345,8 +359,8 @@ export class Map {
 			}
 
 			texture.image.addEventListener("load", () => {
-				texture.needsUpdate = true
-				if (animation) animation.init(texture.image.naturalWidth, texture.image.naturalHeight)
+				texture.needsUpdate = true;
+				if (animation) animation.init(texture.image.naturalWidth, texture.image.naturalHeight);
 			});
 
 			this.loadedTextures.push(texture);
@@ -371,8 +385,25 @@ export class Map {
 			});
 
 			material.needsUpdate = true;
-			materials[i] = material;
-		}
+			materials[index] = material;
+			hydrated++;
+			return material;
+		};
+
+		Object.defineProperty(materials, "ensureMaterials", {
+			enumerable: false,
+			value: indices => {
+				for (let index of indices) hydrateMaterial(index);
+			}
+		});
+		Object.defineProperty(materials, "hydratedCount", {
+			enumerable: false,
+			get: () => hydrated
+		});
+		Object.defineProperty(materials, "textureCount", {
+			enumerable: false,
+			value: textures.length
+		});
 
 		return materials;
 	}
