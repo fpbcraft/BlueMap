@@ -354,8 +354,18 @@ export class Map {
 			let opaque = color[3] === 1;
 			let transparent = !!textureSettings.halfTransparent;
 
+			let textureSource = textureSettings.texture;
+			if (textureSettings.textureUrl) {
+				let manifestUrl = new URL(this.data.texturesUrl, document.baseURI);
+				textureSource = new URL(textureSettings.textureUrl, manifestUrl).href;
+			}
+			if (!textureSource) {
+				throw new Error(`Texture material ${index} has no image source`);
+			}
+
 			let texture = new Texture();
-			texture.image = stringToImage(textureSettings.texture);
+			texture.image = stringToImage(textureSource);
+			texture.image.decoding = "async";
 
 			texture.anisotropy = 1;
 			texture.generateMipmaps = opaque || transparent;
