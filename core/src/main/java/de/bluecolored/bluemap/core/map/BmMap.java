@@ -188,8 +188,8 @@ public class BmMap {
     }
 
     private void saveTextureGallery() {
-        try (OutputStream out = storage.textures().write()) {
-            this.textureGallery.writeTexturesFile(out);
+        try {
+            this.textureGallery.writeExternalTextures(storage);
         } catch (IOException ex) {
             Logger.global.logError("Failed to save textures for map '" + getId() + "'!", ex);
         }
