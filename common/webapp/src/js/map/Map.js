@@ -282,7 +282,10 @@ export class Map {
 		// textures.json changes far less frequently than map tiles. Keep its URL stable so
 		// the browser can reuse the cached body, but explicitly revalidate it so resource-
 		// pack changes are picked up immediately through ETag/Last-Modified.
-		return fetch(this.data.texturesUrl, {cache: "no-cache"})
+		// Keep this format key stable across ordinary refreshes, but distinct from
+		// legacy base64 manifests that may still exist in a reverse-proxy cache.
+		let manifestUrl = this.data.texturesUrl + "?format=external-v1";
+		return fetch(manifestUrl, {cache: "no-cache"})
 			.then(response => {
 				if (!response.ok) {
 					throw new Error(`HTTP ${response.status}`);
