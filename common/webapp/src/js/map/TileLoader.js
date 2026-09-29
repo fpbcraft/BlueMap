@@ -77,7 +77,11 @@ export class TileLoader {
                         let materialIndices = geometry.groups.length > 0
                             ? new Set(geometry.groups.map(group => group.materialIndex))
                             : new Set([0]);
-                        this.material.ensureMaterials(materialIndices);
+                        await this.material.ensureMaterials(materialIndices);
+                        if (cancelCheck()){
+                            reject({status: "cancelled"});
+                            return;
+                        }
                     }
 
                     let object = new Mesh(geometry, this.material);
