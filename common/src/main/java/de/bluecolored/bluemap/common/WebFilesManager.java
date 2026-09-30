@@ -69,6 +69,10 @@ public class WebFilesManager {
     }
 
     public void saveSettings() throws IOException {
+        // Version is managed by BlueMap itself, even when the rest of an existing
+        // settings.json is intentionally preserved.
+        this.settings.version = BlueMap.VERSION;
+
         FileHelper.createDirectories(getSettingsFile().getParent());
         try (BufferedWriter writer = Files.newBufferedWriter(getSettingsFile(),
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
