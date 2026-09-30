@@ -42,7 +42,9 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class TextureGallery {
 
@@ -114,6 +116,7 @@ public class TextureGallery {
     public void writeExternalTextures(MapStorage storage) throws IOException {
         Texture[] textures = snapshotTextures();
         JsonArray manifest = new JsonArray();
+        Set<String> ensuredAssets = new HashSet<>();
 
         for (Texture texture : textures) {
             JsonObject entry = GSON.toJsonTree(texture, Texture.class).getAsJsonObject();
@@ -122,10 +125,12 @@ public class TextureGallery {
             String shard = hash.substring(0, 2);
             String assetName = TEXTURE_ASSET_PREFIX + shard + "/" + hash + ".png";
 
-            ItemStorage asset = storage.asset(assetName);
-            if (!asset.exists()) {
-                try (OutputStream out = asset.write()) {
-                    out.write(png);
+            if (ensuredAssets.add(assetName)) {
+                ItemStorage asset = storage.asset(assetName);
+                if (!asset.exists()) {
+                    try (OutputStream out = asset.write()) {
+                        out.write(png);
+                    }
                 }
             }
 
