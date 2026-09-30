@@ -71,6 +71,19 @@ export class TileLoader {
 
                     let geometry = this.bufferGeometryLoader.parse(data);
 
+                    // PRBM groups carry the texture/material index. Hydrate only the
+                    // materials actually referenced by this tile before creating the mesh.
+                    if (Array.isArray(this.material) && typeof this.material.ensureMaterials === "function") {
+                        let materialIndices = geometry.groups.length > 0
+                            ? new Set(geometry.groups.map(group => group.materialIndex))
+                            : new Set([0]);
+                        await this.material.ensureMaterials(materialIndices);
+                        if (cancelCheck()){
+                            reject({status: "cancelled"});
+                            return;
+                        }
+                    }
+
                     let object = new Mesh(geometry, this.material);
 
                     let tileSize = this.tileSettings.tileSize;

@@ -99,8 +99,17 @@ public class MapStorageRequestHandler implements HttpRequestHandler {
             };
             if (in != null){
                 HttpResponse response = new HttpResponse(HttpStatusCode.OK);
-                response.addHeader("Cache-Control", "public");
-                response.addHeader("Cache-Control", "max-age=" + TimeUnit.DAYS.toSeconds(1));
+                if (path.startsWith("assets/textures/")) {
+                    // Texture filenames are SHA-256 content hashes, so they can be cached
+                    // indefinitely without making map tiles or live data stale.
+                    response.addHeader(
+                            "Cache-Control",
+                            "public, max-age=" + TimeUnit.DAYS.toSeconds(365) + ", immutable"
+                    );
+                } else {
+                    response.addHeader("Cache-Control", "public");
+                    response.addHeader("Cache-Control", "max-age=" + TimeUnit.DAYS.toSeconds(1));
+                }
                 response.addHeader("Content-Type", ContentTypeRegistry.fromFileName(path));
                 writeToResponse(in, response, request);
                 return response;

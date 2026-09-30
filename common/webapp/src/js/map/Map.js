@@ -117,17 +117,16 @@ export class Map {
 		this.unload()
 
 		let settingsPromise = this.loadSettings(tileCacheHash);
-		let textureFilePromise = this.loadTexturesFile(tileCacheHash);
+		let textureFilePromise = this.loadTexturesFile();
 
 		this.lowresMaterial = this.createLowresMaterial(lowresVertexShader, lowresFragmentShader, uniforms);
+		this.hiresMaterial = this.createHiresMaterial(hiresVertexShader, hiresFragmentShader, uniforms, textureFilePromise);
 
-		return Promise.all([settingsPromise, textureFilePromise])
-            .then(values => {
-                let textures = values[1];
-                if (textures === null) throw new Error("Failed to parse textures.json!");
-
-                this.hiresMaterial = this.createHiresMaterial(hiresVertexShader, hiresFragmentShader, uniforms, textures);
-
+		// Map layout/settings are enough to start low-res rendering. The texture
+		// manifest continues loading in parallel and is awaited by individual
+		// high-res tiles only when they need to hydrate their material indices.
+		return settingsPromise
+            .then(() => {
                 this.hiresTileManager = new TileManager(new TileLoader(
 					`${this.data.mapDataRoot}/tiles/0/`,
 					this.hiresMaterial,
@@ -277,18 +276,25 @@ export class Map {
 	 * Loads the textures.json file for this map
 	 * @returns {Promise<Object>}
 	 */
-	loadTexturesFile(tileCacheHash) {
-		return new Promise((resolve, reject) => {
-			alert(this.events, `Loading textures for map '${this.data.id}'...`, "fine");
+	loadTexturesFile() {
+		alert(this.events, `Loading textures for map '${this.data.id}'...`, "fine");
 
-			let loader = new FileLoader();
-			loader.setResponseType("json");
-			loader.load(this.data.texturesUrl + "?" + tileCacheHash,
-				resolve,
-				() => {},
-				() => reject(`Failed to load the textures.json for map: ${this.data.id}`)
-			)
-		});
+		// textures.json changes far less frequently than map tiles. Keep its URL stable so
+		// the browser can reuse the cached body, but explicitly revalidate it so resource-
+		// pack changes are picked up immediately through ETag/Last-Modified.
+		// Keep this format key stable across ordinary refreshes, but distinct from
+		// legacy base64 manifests that may still exist in a reverse-proxy cache.
+		let manifestUrl = this.data.texturesUrl + "?format=external-v1";
+		return fetch(manifestUrl, {cache: "no-cache"})
+			.then(response => {
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+				return response.json();
+			})
+			.catch(() => {
+				throw new Error(`Failed to load the textures.json for map: ${this.data.id}`);
+			});
 	}
 
 	/**
@@ -296,20 +302,52 @@ export class Map {
 	 * @param vertexShader {string}
 	 * @param fragmentShader {string}
 	 * @param uniforms {object}
-	 * @param textures {{
+	 * @param texturesPromise {Promise<Array<{
 	 *     resourcePath: string,
 	 *     color: number[],
 	 *     halfTransparent: boolean,
 	 *     texture: string,
 	 *     animation: any | undefined
-	 * }[]} the textures-data
-	 * @returns {ShaderMaterial[]} the hires Material (array because its a multi-material)
+	 * }>>} asynchronously loaded texture metadata
+	 * @returns {ShaderMaterial[]} sparse lazy multi-material array
 	 */
-	createHiresMaterial(vertexShader, fragmentShader, uniforms, textures) {
+	createHiresMaterial(vertexShader, fragmentShader, uniforms, texturesPromise) {
+		// Keep an index-compatible material array immediately so the map can start
+		// rendering low-res tiles before textures.json has finished loading/parsing.
 		let materials = [];
-		if (!Array.isArray(textures)) throw new Error("Invalid texture.json: 'textures' is not an array!")
-		for (let i = 0; i < textures.length; i++) {
-			let textureSettings = textures[i];
+		let textures = null;
+		let textureError = null;
+		let hydrated = 0;
+		let disposed = false;
+
+		let ready = Promise.resolve(texturesPromise)
+			.then(loadedTextures => {
+				if (!Array.isArray(loadedTextures)) {
+					throw new Error("Invalid texture.json: 'textures' is not an array!");
+				}
+				textures = loadedTextures;
+				materials.length = textures.length;
+				return textures;
+			})
+			.catch(error => {
+				textureError = error;
+				if (!disposed) {
+					alert(this.events, `Failed to prepare textures for map '${this.data.id}'. High-resolution tiles will be unavailable.`, "warning");
+				}
+				return null;
+			});
+
+		let hydrateMaterial = index => {
+			if (disposed) throw {status: "cancelled"};
+			if (!textures) {
+				if (textureError) throw textureError;
+				throw new Error("Texture manifest is not ready");
+			}
+			if (!Number.isInteger(index) || index < 0 || index >= textures.length) index = 0;
+			if (materials[index]) return materials[index];
+
+			let textureSettings = textures[index] || textures[0];
+			if (!textureSettings) throw new Error("textures.json does not contain a fallback texture");
 
 			let color = textureSettings.color;
 			if (!Array.isArray(color) || color.length < 4){
@@ -319,8 +357,18 @@ export class Map {
 			let opaque = color[3] === 1;
 			let transparent = !!textureSettings.halfTransparent;
 
+			let textureSource = textureSettings.texture;
+			if (textureSettings.textureUrl) {
+				let manifestUrl = new URL(this.data.texturesUrl, document.baseURI);
+				textureSource = new URL(textureSettings.textureUrl, manifestUrl).href;
+			}
+			if (!textureSource) {
+				throw new Error(`Texture material ${index} has no image source`);
+			}
+
 			let texture = new Texture();
-			texture.image = stringToImage(textureSettings.texture);
+			texture.image = stringToImage(textureSource);
+			texture.image.decoding = "async";
 
 			texture.anisotropy = 1;
 			texture.generateMipmaps = opaque || transparent;
@@ -345,8 +393,8 @@ export class Map {
 			}
 
 			texture.image.addEventListener("load", () => {
-				texture.needsUpdate = true
-				if (animation) animation.init(texture.image.naturalWidth, texture.image.naturalHeight)
+				texture.needsUpdate = true;
+				if (animation) animation.init(texture.image.naturalWidth, texture.image.naturalHeight);
 			});
 
 			this.loadedTextures.push(texture);
@@ -371,8 +419,34 @@ export class Map {
 			});
 
 			material.needsUpdate = true;
-			materials[i] = material;
-		}
+			materials[index] = material;
+			hydrated++;
+			return material;
+		};
+
+		Object.defineProperty(materials, "ensureMaterials", {
+			enumerable: false,
+			value: async indices => {
+				await ready;
+				if (textureError) throw textureError;
+				if (disposed) throw {status: "cancelled"};
+				for (let index of indices) hydrateMaterial(index);
+			}
+		});
+		Object.defineProperty(materials, "disposeLazy", {
+			enumerable: false,
+			value: () => {
+				disposed = true;
+			}
+		});
+		Object.defineProperty(materials, "hydratedCount", {
+			enumerable: false,
+			get: () => hydrated
+		});
+		Object.defineProperty(materials, "textureCount", {
+			enumerable: false,
+			get: () => textures ? textures.length : 0
+		});
 
 		return materials;
 	}
@@ -409,7 +483,10 @@ export class Map {
 			this.lowresTileManager = null;
 		}
 
-		if (this.hiresMaterial) this.hiresMaterial.forEach(material => material.dispose());
+		if (this.hiresMaterial) {
+			if (typeof this.hiresMaterial.disposeLazy === "function") this.hiresMaterial.disposeLazy();
+			this.hiresMaterial.forEach(material => material.dispose());
+		}
 		this.hiresMaterial = null;
 
 		if (this.lowresMaterial) this.lowresMaterial.dispose();
