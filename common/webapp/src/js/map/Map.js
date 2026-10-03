@@ -500,7 +500,12 @@ export class Map {
 	 * @returns {boolean}
 	 */
 	get isLoaded() {
-		return !!(this.hiresMaterial && this.lowresMaterial);
+		return !!(
+			this.hiresMaterial &&
+			this.lowresMaterial &&
+			this.hiresTileManager &&
+			this.lowresTileManager
+		);
 	}
 
 }
