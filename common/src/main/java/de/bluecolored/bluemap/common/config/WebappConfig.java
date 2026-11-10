@@ -63,6 +63,7 @@ public class WebappConfig {
     private String liveDataRoot = "maps";
 
     private Set<String> scripts = new HashSet<>();
+    private Set<String> earlyScripts = new HashSet<>();
     private Set<String> styles = new HashSet<>();
 
     public boolean isEnabled() {
@@ -135,6 +136,10 @@ public class WebappConfig {
 
     public Set<String> getScripts() {
         return scripts;
+    }
+
+    public Set<String> getEarlyScripts() {
+        return earlyScripts;
     }
 
     public Set<String> getStyles() {

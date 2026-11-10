@@ -162,6 +162,7 @@ public class WebFilesManager {
 
         private Set<String> maps = new HashSet<>();
         private Set<String> scripts = new HashSet<>();
+        private Set<String> earlyScripts = new HashSet<>();
         private Set<String> styles = new HashSet<>();
 
         public void setFrom(WebappConfig config) {
@@ -186,11 +187,13 @@ public class WebFilesManager {
 
             this.styles.clear();
             this.scripts.clear();
+            this.earlyScripts.clear();
 
             addFrom(config);
         }
 
         public void addFrom(WebappConfig config) {
+            this.earlyScripts.addAll(config.getEarlyScripts());
             Set<String> scripts = config.getScripts();
             for (String script : scripts) {
                 this.scripts.add(script);
