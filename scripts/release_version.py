@@ -83,6 +83,27 @@ def next_version(
     return f"{major}.{minor}.{patch + 1}"
 
 
+def compatible_tags(tags: Iterable[str]) -> list[str]:
+    return [tag for tag in tags if (version := stable_tuple(tag)) is not None and version[:2] == (5, 7)]
+
+
+def compatible_release(value: str) -> str:
+    version = normalize_version(value)
+    match = SEMVER.fullmatch(version)
+    assert match is not None
+    if match.group(1, 2) != ("5", "7"):
+        raise ValueError("this branch must release 5.7.x to satisfy BlueMap addon dependencies")
+    if match.group(3) == "0" and match.group(4):
+        raise ValueError("prereleases must use patch 1 or higher to remain above BlueMap 5.7")
+    return version
+
+
+def next_compatible_version(tags: Iterable[str], exact: str | None = None) -> str:
+    if exact and exact.strip():
+        return compatible_release(exact)
+    return compatible_release(next_version(compatible_tags(tags), "patch"))
+
+
 def repository_tags() -> list[str]:
     output = subprocess.check_output(
         ["git", "tag", "--list", "v*"],
@@ -110,28 +131,23 @@ def main() -> None:
     development.add_argument("--sha", required=True)
 
     next_release = subparsers.add_parser("next")
-    next_release.add_argument("--bump", choices=("patch", "minor", "major"), required=True)
     next_release.add_argument("--exact", default="")
 
     args = parser.parse_args()
 
     try:
         if args.command == "from-tag":
-            print(version_from_tag(args.tag))
+            print(compatible_release(version_from_tag(args.tag)))
         elif args.command == "dev":
             print(
                 development_version(
-                    stable_base_version(reachable_repository_tags()),
+                    next_compatible_version(reachable_repository_tags()),
                     args.sha,
                 )
             )
         else:
             print(
-                next_version(
-                    reachable_repository_tags(),
-                    args.bump,
-                    args.exact,
-                )
+                next_compatible_version(reachable_repository_tags(), args.exact)
             )
     except ValueError as error:
         raise SystemExit(str(error)) from error

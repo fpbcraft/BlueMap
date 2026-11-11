@@ -48,6 +48,8 @@ jobs:
           ./gradlew -PbluemapPlatforms=neoforge --configure-on-demand
           :core:spotlessCheck :common:spotlessCheck :neoforge:spotlessCheck
           :core:test :common:test :neoforge:test :neoforge:release --no-daemon --stacktrace
+      - name: Verify addon-compatible mod version
+        run: python3 scripts/verify_neoforge_release.py "build/release/bluemap-$RELEASE_VERSION-neoforge.jar" "$RELEASE_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: bluemap-neoforge-1.21.1-${{ github.sha }}

@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from release_version import (  # noqa: E402
+    compatible_tags,
+    compatible_release,
+    next_compatible_version,
     development_version,
     next_version,
     stable_base_version,
@@ -17,6 +20,21 @@ from release_version import (  # noqa: E402
 
 
 class ReleaseVersionTest(unittest.TestCase):
+    def test_fork_counter_ignores_accidental_6_release_and_newer_upstream_tags(self) -> None:
+        tags = ["v5.7", "v6.0.0", "v5.8", "v5.23"]
+        self.assertEqual("5.7.1", next_compatible_version(tags))
+        self.assertEqual("5.7.3", next_compatible_version(tags + ["v5.7.1", "v5.7.2"]))
+        self.assertEqual("5.7.0", stable_base_version(compatible_tags(tags)))
+        self.assertEqual("5.7.1-dev.a1b2c3d4", development_version(next_compatible_version(tags), "a1b2c3d4"))
+
+    def test_rejects_incompatible_exact_versions_and_tags(self) -> None:
+        for version in ["6.0.0", "5.8.0", "5.6.9", "5.7.0-rc.1"]:
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                next_compatible_version(["v5.7"], version)
+        self.assertEqual("5.7.1", compatible_release("v5.7.1"))
+        self.assertEqual("5.7.2-rc.1", compatible_release("5.7.2-rc.1"))
+
+
     def test_legacy_bluemap_tags_seed_three_component_versions(self) -> None:
         self.assertEqual("5.7.1", next_version(["v5.6", "v5.7"], "patch"))
         self.assertEqual("5.7.0-dev.a1b2c3d4", development_version(stable_base_version(["v5.7"]), "a1b2c3d4"))
