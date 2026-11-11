@@ -6,11 +6,11 @@ plugins {
 }
 
 val supportedMinecraftVersions = listOf(
-    "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+    "1.21.1"
 )
 
 val minecraftVersion = supportedMinecraftVersions.first()
-val neoVersion = "21.0.0-beta"
+val neoVersion = "21.1.248"
 val loaderVersion = "4"
 
 val shadowInclude: Configuration by configurations.creating

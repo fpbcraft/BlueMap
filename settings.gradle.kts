@@ -22,13 +22,14 @@ includeBuild("api")
 include(":core")
 include(":common")
 
-implementation("cli")
-implementation("fabric")
-implementation("forge")
-implementation("neoforge")
-implementation("paper")
-implementation("spigot")
-implementation("sponge")
+// CI can configure only its selected platform; local/upstream builds retain all targets.
+val allPlatforms = setOf("cli", "fabric", "forge", "neoforge", "paper", "spigot", "sponge")
+val platforms = providers.gradleProperty("bluemapPlatforms").orNull
+    ?.split(",")?.map { it.trim() }?.toSet() ?: allPlatforms
+require(platforms.isNotEmpty() && platforms.all { it in allPlatforms }) {
+    "bluemapPlatforms must contain comma-separated supported platforms: $allPlatforms"
+}
+platforms.forEach { implementation(it) }
 
 fun implementation(name: String) {
     val project = ":$name"
