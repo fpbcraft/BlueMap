@@ -247,6 +247,8 @@ export class BlueMapApp {
      * @returns {Promise<void>}
      */
     async switchMap(mapId, resetCamera = true) {
+        const token = {};
+        this.mapSwitchToken = token;
         let map = this.mapsMap.get(mapId);
         if (!map) return Promise.reject(`There is no map with the id "${mapId}" loaded!`);
 
@@ -254,6 +256,7 @@ export class BlueMapApp {
         if (this.markerFileManager) this.markerFileManager.dispose();
 
         await this.mapViewer.switchMap(map)
+        if (this.mapSwitchToken !== token) return;
 
         if (resetCamera || !this.mapViewer.map.hasView(this.appState.controls.state))
             this.resetCamera();

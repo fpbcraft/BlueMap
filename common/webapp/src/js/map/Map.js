@@ -115,6 +115,7 @@ export class Map {
 	 */
 	load(hiresVertexShader, hiresFragmentShader, lowresVertexShader, lowresFragmentShader, uniforms, tileCacheHash = 0) {
 		this.unload()
+        const generation = this.loadGeneration;
 
 		let settingsPromise = this.loadSettings(tileCacheHash);
 		let textureFilePromise = this.loadTexturesFile();
@@ -127,6 +128,7 @@ export class Map {
 		// high-res tiles only when they need to hydrate their material indices.
 		return settingsPromise
             .then(() => {
+                if (generation !== this.loadGeneration) throw {status: "cancelled"};
                 this.hiresTileManager = new TileManager(new TileLoader(
 					`${this.data.mapDataRoot}/tiles/0/`,
 					this.hiresMaterial,
@@ -473,6 +475,7 @@ export class Map {
 	}
 
 	unload() {
+        this.loadGeneration = (this.loadGeneration || 0) + 1;
 		if (this.hiresTileManager) this.hiresTileManager.unload();
 		this.hiresTileManager = null;
 
@@ -573,7 +576,7 @@ export class Map {
 	 * @returns {boolean}
 	 */
 	get isLoaded() {
-		return !!(this.hiresMaterial && this.lowresMaterial);
+		return !!(this.hiresMaterial && this.lowresMaterial && this.hiresTileManager && this.lowresTileManager);
 	}
 
 }
