@@ -140,6 +140,22 @@ class TextureGalleryTest {
         assertArrayEquals(previous, manifest(storage));
     }
 
+    @Test void repairsAnUnreadableCompressedAssetBeforePublishing() throws Exception {
+        FileMapStorage storage = new FileMapStorage(root, Compression.GZIP, true);
+        TextureGallery gallery = gallery();
+        gallery.writeExternalTextures(storage);
+        byte[] original = manifest(storage);
+        String url = JsonParser.parseString(new String(original)).getAsJsonArray().get(0).getAsJsonObject().get("textureUrl").getAsString();
+        Path asset;
+        try (var files = Files.walk(root)) {
+            String hash = url.substring(url.lastIndexOf('/') + 1);
+            asset = files.filter(path -> path.getFileName().toString().startsWith(hash)).findFirst().orElseThrow();
+        }
+        Files.write(asset, new byte[]{0x1f, (byte) 0x8b});
+        gallery.writeExternalTextures(storage);
+        assertArrayEquals(embedded(gallery), embedded(TextureGallery.readTexturesFile(new ByteArrayInputStream(manifest(storage)), storage)));
+    }
+
     @Test void rejectsExternalPathsOutsideTheContentAddressedAssetDirectory() throws Exception {
         FileMapStorage storage = new FileMapStorage(root, Compression.NONE, true);
         gallery().writeExternalTextures(storage);

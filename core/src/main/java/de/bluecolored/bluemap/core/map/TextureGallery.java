@@ -132,6 +132,10 @@ public class TextureGallery {
                 if (asset.exists()) {
                     try (var in = asset.read()) {
                         matches = in != null && Arrays.equals(png, in.decompress().readAllBytes());
+                    } catch (IOException ex) {
+                        // An interrupted older export can leave an unreadable compressed asset.
+                        // Replace it from the retained PNG before publishing its manifest entry.
+                        matches = false;
                     }
                 }
                 if (!matches) {
