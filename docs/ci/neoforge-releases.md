@@ -4,11 +4,11 @@ The fork's deployment branch is `v5.7-fpb`. Its default CI builds/tests core, co
 
 ## Release controls
 
-After this workflow is merged into the default/deployment branch, open Actions → Semantic Release → Run workflow. Select patch/minor/major or supply an exact three-component SemVer. This mirrors Player History's manual semantic-version/tag workflow; it is not npm semantic-release's automatic commit classification.
+Open Actions → Release BlueMap 5.7 → Run workflow. Leaving the version empty increments only the patch number: 5.7.1, 5.7.2, and so on. An exact version must stay on 5.7.x. Major/minor bumps are intentionally unavailable because addons such as bluemapmodelloaders require BlueMap >=5.7 and <5.8.
 
-Successful releases publish the verified NeoForge jar to GitHub Releases and retain an Actions artifact. `RELEASE_VERSION` is validated and used consistently in jar filenames and metadata. Existing release versions are immutable. Manual releases must run from `v5.7-fpb`; pushed release tags must point to a commit reachable from that branch. Prerelease versions are marked prerelease. The workflow creates no tag/release until the build and tests succeed.
+Successful releases publish the verified NeoForge jar and an Actions artifact. Both the version helper and Gradle reject incompatible RELEASE_VERSION values. The workflow inspects the actual mod metadata inside the finished jar before upload. Manual releases run from v5.7-fpb; pushed v5.7.* tags must be reachable from that branch. Versions are immutable.
 
-The version helper interprets legacy reachable tags such as `v5.7` as baseline 5.7.0, so the first patch defaults to 5.7.1. Unrelated newer upstream master tags do not advance the production version. Exact versions still require complete SemVer. Branch development artifacts use `<reachable-version>-dev.<sha>`.
+Only reachable 5.7.x tags count when choosing versions. Legacy v5.7 means 5.7.0; the accidental v6.0.0 release and newer upstream lines are ignored. Development builds use the next compatible patch plus -dev.<sha>. Stable releases are explicitly marked Latest so the higher-numbered accidental release does not remain the default download. Existing v6.0.0 assets/tags are not overwritten or deleted by this change.
 
 The optional “include CLI” release input also builds/uploads the standalone CLI for retained texture migration. It is off by default and is not a server mod. Docker is separately opt-in under the Build workflow; normal CI and releases do not build/push a container. Existing Docker source support remains available and builds only its CLI dependency.
 
@@ -24,7 +24,7 @@ Local validation of the full targeted command passed in 1m18s, including a newly
 
 ## Validation
 
-- Version-tool tests cover valid/invalid tags, semantic bumps, development identity and legacy two-component BlueMap baselines.
+- Version-tool tests cover ignoring v6.0.0, sequential 5.7 patches, incompatible exact versions, development identity and legacy two-component baselines. Metadata tests reject mislabeled jars even when their filenames look compatible.
 - Targeted core/common checks and NeoForge 1.21.1 packaging pass with an explicit development release version.
 - The platform graph excludes Fabric/Forge/Paper/Spigot/Sponge in the target build. Existing source projects remain available via the default/all-platform configuration.
 - The published filename and embedded NeoForge metadata must match the resolved release version; inspect the CI artifact before the first manual release.

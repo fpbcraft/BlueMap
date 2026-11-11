@@ -17,12 +17,18 @@ fun Project.gitVersion(): String {
         require(Regex("""(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?""").matches(releaseVersion)) {
             "RELEASE_VERSION must be a semantic version"
         }
+        require(releaseVersion.startsWith("5.7.")) {
+            "RELEASE_VERSION must stay on 5.7.x for addon compatibility"
+        }
+        require(!releaseVersion.startsWith("5.7.0-")) {
+            "Prereleases must use patch 1 or higher for addon compatibility"
+        }
         logger.lifecycle("${project.name} version: $releaseVersion")
         return releaseVersion
     }
 
-    val lastTag = if (runCommand("git tag", "").isEmpty()) "" else runCommand("git describe --tags --abbrev=0", "")
-    val lastVersion = if (lastTag.isEmpty()) "0.0" else lastTag.substring(1) // remove the leading 'v'
+    val lastTag = compatibleTag()
+    val lastVersion = if (lastTag == "v5.7") "5.7.0" else lastTag.substring(1) // remove the leading 'v'
     val commits = runCommand("git rev-list --count $lastTag..HEAD", "0")
     val branch = runCommand("git branch --show-current", "master")
     val gitVersion = lastVersion +
@@ -36,7 +42,7 @@ fun Project.gitVersion(): String {
 }
 
 fun Project.gitIsRelease(): Boolean {
-    val lastTag = if (runCommand("git tag", "").isEmpty()) "" else runCommand("git describe --tags --abbrev=0", "")
+    val lastTag = compatibleTag()
     val commits = runCommand("git rev-list --count $lastTag..HEAD", "0")
     return commits == "0" && gitClean()
 }
@@ -49,6 +55,12 @@ fun Project.releaseNotes(): String {
         .readText()
         .replace("{version}", project.version.toString())
 }
+
+private fun Project.compatibleTag(): String =
+    runCommand("git tag --merged HEAD --list v5.7 v5.7.* --sort=-version:refname", "")
+        .lineSequence()
+        .firstOrNull { Regex("""v5\.7(?:\.\d+)?""").matches(it) }
+        ?: error("No reachable stable BlueMap 5.7 tag found")
 
 private fun Project.runCommand(cmd: String, fallback: String? = null): String {
     ProcessBuilder(cmd.split("\\s(?=(?:[^'\"`]*(['\"`])[^'\"`]*\\1)*[^'\"`]*$)".toRegex()))

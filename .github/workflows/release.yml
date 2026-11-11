@@ -1,18 +1,12 @@
-name: Semantic Release
+name: Release BlueMap 5.7
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['v5.7.*']
   workflow_dispatch:
     inputs:
-      bump:
-        description: Semantic version bump when exact version is empty
-        required: true
-        default: patch
-        type: choice
-        options: [patch, minor, major]
       version:
-        description: Optional exact SemVer (for example 5.7.1 or 5.7.1-rc.1)
+        description: Optional exact 5.7.x version; otherwise increments the patch number
         type: string
         default: ''
       include_cli:
@@ -58,7 +52,6 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           EXACT_VERSION: ${{ inputs.version }}
-          BUMP: ${{ inputs.bump }}
         run: |
           if [[ "$EVENT_NAME" == "push" ]]; then
             git merge-base --is-ancestor "$GITHUB_SHA" origin/v5.7-fpb || {
@@ -72,7 +65,7 @@ jobs:
               echo "::error::Manual releases must run from v5.7-fpb."
               exit 1
             fi
-            version="$(python3 scripts/release_version.py next --bump "$BUMP" --exact "$EXACT_VERSION")"
+            version="$(python3 scripts/release_version.py next --exact "$EXACT_VERSION")"
             create_tag=true
             if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
               echo "::error::Release tag v$version already exists; versions are immutable."
@@ -93,6 +86,10 @@ jobs:
             tasks+=(:cli:spotlessCheck :cli:release)
           fi
           ./gradlew "-PbluemapPlatforms=$platforms" --configure-on-demand "${tasks[@]}" --no-daemon --stacktrace
+      - name: Verify addon-compatible mod version
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: python3 scripts/verify_neoforge_release.py "build/release/bluemap-$RELEASE_VERSION-neoforge.jar" "$RELEASE_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: bluemap-${{ steps.release.outputs.version }}-neoforge-1.21.1
@@ -106,7 +103,7 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           prerelease=()
-          if [[ "$VERSION" == *-* ]]; then prerelease+=(--prerelease); fi
+          if [[ "$VERSION" == *-* ]]; then prerelease+=(--prerelease); else prerelease+=(--latest); fi
           if [[ "$CREATE_TAG" == "true" ]]; then
             gh release create "v$VERSION" build/release/*.jar --target "$TARGET_SHA" --title "v$VERSION" --generate-notes "${prerelease[@]}"
           else
