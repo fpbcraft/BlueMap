@@ -98,6 +98,19 @@ class TextureGalleryTest {
         assertThrows(IOException.class, () -> TextureGallery.readTexturesFile(new ByteArrayInputStream(original), storage));
     }
 
+    @Test void retainsFlatGalleryAnimationMetadataAcrossBothFormats() throws Exception {
+        FileMapStorage storage = new FileMapStorage(root, Compression.NONE, true);
+        JsonArray entries = JsonParser.parseString(new String(embedded(gallery()))).getAsJsonArray();
+        entries.get(0).getAsJsonObject().add("animation", JsonParser.parseString("""
+                {"interpolate":true,"width":2,"height":3,"frametime":4,
+                 "frames":[{"index":2,"time":5},{"index":0,"time":8}]}
+                """));
+        TextureGallery loaded = TextureGallery.readTexturesFile(new ByteArrayInputStream(entries.toString().getBytes()), storage);
+        loaded.writeExternalTextures(storage);
+        TextureGallery restored = TextureGallery.readTexturesFile(new ByteArrayInputStream(manifest(storage)), storage);
+        assertEquals(entries, JsonParser.parseString(new String(embedded(restored))));
+    }
+
     @Test void repairsInterruptedAssetWritesBeforePublishingTheirReferences() throws Exception {
         FileMapStorage storage = new FileMapStorage(root, Compression.NONE, true);
         TextureGallery gallery = gallery();

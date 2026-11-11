@@ -212,6 +212,12 @@ public class TextureGallery {
                     }
                     entry.addProperty("texture", encoded);
                 }
+                // Gallery metadata is flat; the resource-pack adapter expects a .mcmeta wrapper.
+                if (entry.has("animation") && !entry.get("animation").isJsonNull()) {
+                    JsonObject animation = new JsonObject();
+                    animation.add("animation", entry.get("animation"));
+                    entry.add("animation", animation);
+                }
                 Texture texture = GSON.fromJson(entry, Texture.class);
                 if (texture.getResourcePath() == null) throw new IOException("Texture resource path is missing");
                 gallery.textureMappings.put(texture.getResourcePath(), new TextureMapping(ordinal, texture));
