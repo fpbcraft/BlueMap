@@ -42,6 +42,7 @@ import de.bluecolored.bluemap.common.web.http.HttpServer;
 import de.bluecolored.bluemap.core.BlueMap;
 import de.bluecolored.bluemap.core.logger.Logger;
 import de.bluecolored.bluemap.core.map.BmMap;
+import de.bluecolored.bluemap.core.map.TextureGallery;
 import de.bluecolored.bluemap.core.storage.MapStorage;
 import de.bluecolored.bluemap.core.util.FileHelper;
 import org.apache.commons.cli.*;
@@ -219,6 +220,23 @@ public class BlueMapCLI {
         }
     }
 
+    public void migrateTextures(BlueMapService blueMap, String selectedMaps) throws IOException, ConfigurationException, InterruptedException {
+        Set<String> selected = selectedMaps == null ? null : new HashSet<>(Arrays.asList(selectedMaps.split(",")));
+        if (selected != null && !blueMap.getConfig().getMapConfigs().keySet().containsAll(selected))
+            throw new IOException("Unknown map in texture migration selection: " + selectedMaps);
+        for (var entry : blueMap.getConfig().getMapConfigs().entrySet()) {
+            if (selected != null && !selected.contains(entry.getKey())) continue;
+            MapStorage storage = blueMap.getOrLoadStorage(entry.getValue().getStorage()).map(entry.getKey());
+            TextureGallery gallery;
+            try (var in = storage.textures().read()) {
+                if (in == null) continue;
+                gallery = TextureGallery.readTexturesFile(in.decompress(), storage);
+            }
+            gallery.writeExternalTextures(storage);
+            Logger.global.logInfo("Published external texture manifest for map '" + entry.getKey() + "' without changing material IDs");
+        }
+    }
+
     public void startWebserver(BlueMapService blueMap, boolean verbose) throws IOException, ConfigurationException, InterruptedException {
         Logger.global.logInfo("Starting webserver ...");
 
@@ -359,6 +377,11 @@ public class BlueMapCLI {
             blueMap = new BlueMapService(configs);
             boolean noActions = true;
 
+            if (cmd.hasOption("migrate-textures")) {
+                noActions = false;
+                cli.migrateTextures(blueMap, cmd.getOptionValue("m", null));
+            }
+
             if (cmd.hasOption("w")) {
                 noActions = false;
 
@@ -432,6 +455,9 @@ public class BlueMapCLI {
 
     private static Options createOptions() {
         Options options = new Options();
+        options.addOption(Option.builder().longOpt("migrate-textures")
+                .desc("Externalizes stored texture galleries without rendering tiles or resetting material IDs. Run with exclusive access to storage; optionally select maps with -m.")
+                .build());
 
         options.addOption("h", "help", false, "Displays this message");
 

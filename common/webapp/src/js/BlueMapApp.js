@@ -22,6 +22,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+import {AddonScriptLoader} from "./AddonScriptLoader.mjs";
 import "./BlueMap";
 import {MapViewer} from "./MapViewer";
 import {MapControls} from "./controls/map/MapControls";
@@ -74,6 +75,7 @@ export class BlueMapApp {
          *      liveDataRoot: string,
          *      maps: string[],
          *      scripts: string[],
+         *      earlyScripts: string[],
          *      styles: string[]
          *  }}
          **/
@@ -133,8 +135,11 @@ export class BlueMapApp {
         this.appState.maps.splice(0, this.appState.maps.length);
         this.mapsMap.clear();
 
-        // load settings
+        // Live addons opt into early startup; other addons keep the map-ready contract.
         await this.getSettings();
+        this.addonScriptLoader ??= new AddonScriptLoader(document,
+            url => alert(this.events, "Loading script: " + url, "fine"));
+        this.addonScriptLoader.load(this.settings.scripts, this.settings.earlyScripts, true);
         this.mapControls.minDistance = this.settings.minZoomDistance;
         this.mapControls.maxDistance = this.settings.maxZoomDistance;
 
@@ -183,13 +188,7 @@ export class BlueMapApp {
         // save user settings
         this.saveUserSettings();
 
-        // load settings-scripts
-        if (this.settings.scripts) for (let scriptUrl of this.settings.scripts) {
-            let scriptElement = document.createElement("script");
-            scriptElement.src = scriptUrl;
-            alert(this.events, "Loading script: " + scriptUrl, "fine");
-            document.body.appendChild(scriptElement);
-        }
+        this.addonScriptLoader.load(this.settings.scripts, this.settings.earlyScripts, false);
     }
 
     update = async () => {
@@ -248,6 +247,8 @@ export class BlueMapApp {
      * @returns {Promise<void>}
      */
     async switchMap(mapId, resetCamera = true) {
+        const token = {};
+        this.mapSwitchToken = token;
         let map = this.mapsMap.get(mapId);
         if (!map) return Promise.reject(`There is no map with the id "${mapId}" loaded!`);
 
@@ -255,6 +256,7 @@ export class BlueMapApp {
         if (this.markerFileManager) this.markerFileManager.dispose();
 
         await this.mapViewer.switchMap(map)
+        if (this.mapSwitchToken !== token) return;
 
         if (resetCamera || !this.mapViewer.map.hasView(this.appState.controls.state))
             this.resetCamera();

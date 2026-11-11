@@ -397,6 +397,8 @@ export class MapViewer {
 	 * @returns Promise<void>
 	 */
 	switchMap(map = null) {
+        const token = {};
+        this.mapLoadToken = token;
 		if (this.map && this.map.isMap) this.map.unload();
 		this.data.mapState = "loading";
 
@@ -405,6 +407,7 @@ export class MapViewer {
 		if (this.map && this.map.isMap) {
 			return map.load(HIRES_VERTEX_SHADER, HIRES_FRAGMENT_SHADER, LOWRES_VERTEX_SHADER, LOWRES_FRAGMENT_SHADER, this.data.uniforms, this.tileCacheHash)
 				.then(() => {
+                    if (this.mapLoadToken !== token) return;
 					for (let texture of this.map.loadedTextures){
 						this.renderer.initTexture(texture);
 					}
@@ -427,6 +430,7 @@ export class MapViewer {
 					});
 				})
 				.catch(error => {
+                    if (this.mapLoadToken !== token) return;
 					this.data.mapState = "errored";
 					this.map = null;
 					throw error;

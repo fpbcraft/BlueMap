@@ -40,6 +40,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public class WebFilesManager {
@@ -68,6 +69,10 @@ public class WebFilesManager {
     }
 
     public void saveSettings() throws IOException {
+        // Version is managed by BlueMap itself, even when the rest of an existing
+        // settings.json is intentionally preserved.
+        this.settings.version = BlueMap.VERSION;
+
         FileHelper.createDirectories(getSettingsFile().getParent());
         try (BufferedWriter writer = Files.newBufferedWriter(getSettingsFile(),
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
@@ -104,7 +109,19 @@ public class WebFilesManager {
     }
 
     public boolean filesNeedUpdate() {
-        return !Files.exists(webRoot.resolve("index.html"));
+        if (!Files.exists(webRoot.resolve("index.html"))) return true;
+        if (!Files.isRegularFile(getSettingsFile())) return true;
+
+        // The old check only looked for index.html, so replacing the BlueMap jar
+        // could leave an older extracted JavaScript bundle in the webroot forever.
+        // Compare the version written by the bundled webapp instead, so code changes
+        // are deployed on restart while same-version restarts keep custom files intact.
+        try (BufferedReader reader = Files.newBufferedReader(getSettingsFile())) {
+            Settings installed = GSON.fromJson(reader, Settings.class);
+            return installed == null || !Objects.equals(installed.version, BlueMap.VERSION);
+        } catch (IOException | RuntimeException ex) {
+            return true;
+        }
     }
 
     public void updateFiles() throws IOException {
@@ -145,6 +162,7 @@ public class WebFilesManager {
 
         private Set<String> maps = new HashSet<>();
         private Set<String> scripts = new HashSet<>();
+        private Set<String> earlyScripts = new HashSet<>();
         private Set<String> styles = new HashSet<>();
 
         public void setFrom(WebappConfig config) {
@@ -169,11 +187,13 @@ public class WebFilesManager {
 
             this.styles.clear();
             this.scripts.clear();
+            this.earlyScripts.clear();
 
             addFrom(config);
         }
 
         public void addFrom(WebappConfig config) {
+            this.earlyScripts.addAll(config.getEarlyScripts());
             Set<String> scripts = config.getScripts();
             for (String script : scripts) {
                 this.scripts.add(script);

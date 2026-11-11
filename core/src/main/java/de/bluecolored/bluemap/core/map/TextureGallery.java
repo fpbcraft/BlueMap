@@ -29,20 +29,32 @@ import de.bluecolored.bluemap.core.resources.ResourcePath;
 import de.bluecolored.bluemap.core.resources.adapter.ResourcesGson;
 import de.bluecolored.bluemap.core.resources.pack.resourcepack.ResourcePack;
 import de.bluecolored.bluemap.core.resources.pack.resourcepack.texture.Texture;
+import de.bluecolored.bluemap.core.storage.ItemStorage;
+import de.bluecolored.bluemap.core.storage.MapStorage;
 import de.bluecolored.bluemap.core.util.Key;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Map;
+import java.util.Set;
 
 public class TextureGallery {
 
     private static final Gson GSON = ResourcesGson.addAdapter(new GsonBuilder())
             .setFieldNamingPolicy(FieldNamingPolicy.IDENTITY)
             .create();
+
+    private static final String PNG_DATA_PREFIX = "data:image/png;base64,";
+    private static final String TEXTURE_ASSET_PREFIX = "textures/";
 
     private final Map<ResourcePath<Texture>, TextureMapping> textureMappings;
     private int nextId;
@@ -88,39 +100,150 @@ public class TextureGallery {
     }
 
     public void writeTexturesFile(OutputStream out) throws IOException {
-        Texture[] textures = new Texture[nextId];
-        Arrays.fill(textures, Texture.MISSING);
+        Texture[] textures = snapshotTextures();
 
-        this.textureMappings.forEach((textureResourcePath, mapping) -> {
-            int ordinal = mapping.getId();
-            Texture texture = mapping.getTexture();
-            if (texture == null) texture = Texture.missing(textureResourcePath);
-            textures[ordinal] = texture;
-        });
-
-        try (Writer writer = new OutputStreamWriter(out)) {
+        try (Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
             GSON.toJson(textures, Texture[].class, writer);
         } catch (JsonIOException ex) {
             throw new IOException(ex);
         }
     }
 
-    public static TextureGallery readTexturesFile(InputStream in) throws IOException {
-        TextureGallery gallery = new TextureGallery();
-        try (Reader reader = new InputStreamReader(in)) {
-            Texture[] textures = GSON.fromJson(reader, Texture[].class);
-            if (textures == null) throw new IOException("Texture data is empty!");
-            gallery.nextId = textures.length;
-            for (int ordinal = 0; ordinal < textures.length; ordinal++) {
-                Texture texture = textures[ordinal];
-                if (texture != null) {
-                    gallery.textureMappings.put(texture.getResourcePath(), new TextureMapping(ordinal, texture));
+    /**
+     * Writes a lightweight texture manifest and stores each PNG as a content-addressed
+     * map asset. The manifest keeps material indices stable while allowing the webapp
+     * to fetch/decode only textures referenced by visible PRBM tiles.
+     */
+    public void writeExternalTextures(MapStorage storage) throws IOException {
+        Texture[] textures = snapshotTextures();
+        JsonArray manifest = new JsonArray();
+        Set<String> ensuredAssets = new HashSet<>();
+
+        for (Texture texture : textures) {
+            JsonObject entry = GSON.toJsonTree(texture, Texture.class).getAsJsonObject();
+            byte[] png = decodePng(texture);
+            String hash = sha256(png);
+            String shard = hash.substring(0, 2);
+            String assetName = TEXTURE_ASSET_PREFIX + shard + "/" + hash + ".png";
+
+            if (ensuredAssets.add(assetName)) {
+                ItemStorage asset = storage.asset(assetName);
+                boolean matches = false;
+                if (asset.exists()) {
+                    try (var in = asset.read()) {
+                        matches = in != null && Arrays.equals(png, in.decompress().readAllBytes());
+                    } catch (IOException ex) {
+                        // An interrupted older export can leave an unreadable compressed asset.
+                        // Replace it from the retained PNG before publishing its manifest entry.
+                        matches = false;
+                    }
+                }
+                if (!matches) {
+                    asset.write(png);
                 }
             }
-        } catch (JsonParseException ex) {
+
+            entry.remove("texture");
+            entry.addProperty("textureUrl", "assets/" + assetName);
+            manifest.add(entry);
+        }
+
+        try {
+            storage.textures().write(GSON.toJson(manifest).getBytes(StandardCharsets.UTF_8));
+        } catch (JsonIOException ex) {
             throw new IOException(ex);
         }
+    }
+
+    private Texture[] snapshotTextures() {
+        Texture[] textures = new Texture[nextId];
+        Arrays.fill(textures, Texture.MISSING);
+
+        this.textureMappings.forEach((textureResourcePath, mapping) -> {
+            int ordinal = mapping.getId();
+            Texture texture = mapping.getTexture();
+            if (texture == null || texture.getTexture() == null)
+                texture = Texture.missing(textureResourcePath);
+            textures[ordinal] = texture;
+        });
+
+        return textures;
+    }
+
+    private static byte[] decodePng(Texture texture) throws IOException {
+        String encoded = texture.getTexture();
+        if (encoded == null || !encoded.startsWith(PNG_DATA_PREFIX))
+            encoded = Texture.MISSING.getTexture();
+
+        try {
+            return Base64.getDecoder().decode(encoded.substring(PNG_DATA_PREFIX.length()));
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Invalid base64 PNG texture data", ex);
+        }
+    }
+
+    private static String sha256(byte[] data) throws IOException {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IOException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    public static TextureGallery readTexturesFile(InputStream in) throws IOException {
+        return readTexturesFile(in, null);
+    }
+
+    /** Restores both embedded galleries and content-addressed manifests without changing ordinals. */
+    public static TextureGallery readTexturesFile(InputStream in, @Nullable MapStorage storage) throws IOException {
+        TextureGallery gallery = new TextureGallery();
+        Map<String, String> assets = new HashMap<>();
+        try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+            JsonArray textures = GSON.fromJson(reader, JsonArray.class);
+            if (textures == null) throw new IOException("Texture data is empty!");
+            gallery.nextId = textures.size();
+            for (int ordinal = 0; ordinal < textures.size(); ordinal++) {
+                JsonElement value = textures.get(ordinal);
+                if (value.isJsonNull()) continue;
+                JsonObject entry = value.getAsJsonObject();
+                if (entry.has("textureUrl")) {
+                    if (storage == null) throw new IOException("External texture gallery requires map storage");
+                    String url = entry.get("textureUrl").getAsString();
+                    String encoded = assets.get(url);
+                    if (encoded == null) {
+                        encoded = readExternalTexture(storage, url);
+                        assets.put(url, encoded);
+                    }
+                    entry.addProperty("texture", encoded);
+                }
+                // Gallery metadata is flat; the resource-pack adapter expects a .mcmeta wrapper.
+                if (entry.has("animation") && !entry.get("animation").isJsonNull()) {
+                    JsonObject animation = new JsonObject();
+                    animation.add("animation", entry.get("animation"));
+                    entry.add("animation", animation);
+                }
+                Texture texture = GSON.fromJson(entry, Texture.class);
+                if (texture.getResourcePath() == null) throw new IOException("Texture resource path is missing");
+                gallery.textureMappings.put(texture.getResourcePath(), new TextureMapping(ordinal, texture));
+            }
+        } catch (JsonParseException | IllegalStateException | IllegalArgumentException ex) {
+            throw new IOException("Invalid texture gallery", ex);
+        }
         return gallery;
+    }
+
+    private static String readExternalTexture(MapStorage storage, String url) throws IOException {
+        if (!url.matches("assets/textures/[0-9a-f]{2}/[0-9a-f]{64}\\.png"))
+            throw new IOException("Invalid external texture path: " + url);
+        byte[] png;
+        try (var in = storage.asset(url.substring("assets/".length())).read()) {
+            if (in == null) throw new IOException("Missing texture asset: " + url);
+            png = in.decompress().readAllBytes();
+        }
+        String hash = sha256(png);
+        if (!url.equals("assets/textures/" + hash.substring(0, 2) + "/" + hash + ".png"))
+            throw new IOException("Texture asset hash mismatch: " + url);
+        return PNG_DATA_PREFIX + Base64.getEncoder().encodeToString(png);
     }
 
     static class TextureMapping {
