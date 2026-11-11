@@ -179,9 +179,9 @@ public class BmMap {
     private TextureGallery loadTextureGallery() throws IOException {
         try (CompressedInputStream in = storage.textures().read()){
             if (in != null)
-                return TextureGallery.readTexturesFile(in.decompress());
+                return TextureGallery.readTexturesFile(in.decompress(), storage);
         } catch (IOException ex) {
-            Logger.global.logError("Failed to load textures for map '" + getId() + "'!", ex);
+            throw new IOException("Failed to load existing textures for map '" + getId() + "'; refusing to reset material IDs", ex);
         }
 
         return new TextureGallery();

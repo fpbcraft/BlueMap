@@ -35,6 +35,7 @@ import de.bluecolored.bluemap.core.util.Key;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -101,7 +102,7 @@ public class TextureGallery {
     public void writeTexturesFile(OutputStream out) throws IOException {
         Texture[] textures = snapshotTextures();
 
-        try (Writer writer = new OutputStreamWriter(out)) {
+        try (Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
             GSON.toJson(textures, Texture[].class, writer);
         } catch (JsonIOException ex) {
             throw new IOException(ex);
@@ -127,10 +128,14 @@ public class TextureGallery {
 
             if (ensuredAssets.add(assetName)) {
                 ItemStorage asset = storage.asset(assetName);
-                if (!asset.exists()) {
-                    try (OutputStream out = asset.write()) {
-                        out.write(png);
+                boolean matches = false;
+                if (asset.exists()) {
+                    try (var in = asset.read()) {
+                        matches = in != null && Arrays.equals(png, in.decompress().readAllBytes());
                     }
+                }
+                if (!matches) {
+                    asset.write(png);
                 }
             }
 
@@ -139,9 +144,8 @@ public class TextureGallery {
             manifest.add(entry);
         }
 
-        try (OutputStream out = storage.textures().write();
-             Writer writer = new OutputStreamWriter(out)) {
-            GSON.toJson(manifest, writer);
+        try {
+            storage.textures().write(GSON.toJson(manifest).getBytes(StandardCharsets.UTF_8));
         } catch (JsonIOException ex) {
             throw new IOException(ex);
         }
@@ -183,21 +187,53 @@ public class TextureGallery {
     }
 
     public static TextureGallery readTexturesFile(InputStream in) throws IOException {
+        return readTexturesFile(in, null);
+    }
+
+    /** Restores both embedded galleries and content-addressed manifests without changing ordinals. */
+    public static TextureGallery readTexturesFile(InputStream in, @Nullable MapStorage storage) throws IOException {
         TextureGallery gallery = new TextureGallery();
-        try (Reader reader = new InputStreamReader(in)) {
-            Texture[] textures = GSON.fromJson(reader, Texture[].class);
+        Map<String, String> assets = new HashMap<>();
+        try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+            JsonArray textures = GSON.fromJson(reader, JsonArray.class);
             if (textures == null) throw new IOException("Texture data is empty!");
-            gallery.nextId = textures.length;
-            for (int ordinal = 0; ordinal < textures.length; ordinal++) {
-                Texture texture = textures[ordinal];
-                if (texture != null) {
-                    gallery.textureMappings.put(texture.getResourcePath(), new TextureMapping(ordinal, texture));
+            gallery.nextId = textures.size();
+            for (int ordinal = 0; ordinal < textures.size(); ordinal++) {
+                JsonElement value = textures.get(ordinal);
+                if (value.isJsonNull()) continue;
+                JsonObject entry = value.getAsJsonObject();
+                if (entry.has("textureUrl")) {
+                    if (storage == null) throw new IOException("External texture gallery requires map storage");
+                    String url = entry.get("textureUrl").getAsString();
+                    String encoded = assets.get(url);
+                    if (encoded == null) {
+                        encoded = readExternalTexture(storage, url);
+                        assets.put(url, encoded);
+                    }
+                    entry.addProperty("texture", encoded);
                 }
+                Texture texture = GSON.fromJson(entry, Texture.class);
+                if (texture.getResourcePath() == null) throw new IOException("Texture resource path is missing");
+                gallery.textureMappings.put(texture.getResourcePath(), new TextureMapping(ordinal, texture));
             }
-        } catch (JsonParseException ex) {
-            throw new IOException(ex);
+        } catch (JsonParseException | IllegalStateException | IllegalArgumentException ex) {
+            throw new IOException("Invalid texture gallery", ex);
         }
         return gallery;
+    }
+
+    private static String readExternalTexture(MapStorage storage, String url) throws IOException {
+        if (!url.matches("assets/textures/[0-9a-f]{2}/[0-9a-f]{64}\\.png"))
+            throw new IOException("Invalid external texture path: " + url);
+        byte[] png;
+        try (var in = storage.asset(url.substring("assets/".length())).read()) {
+            if (in == null) throw new IOException("Missing texture asset: " + url);
+            png = in.decompress().readAllBytes();
+        }
+        String hash = sha256(png);
+        if (!url.equals("assets/textures/" + hash.substring(0, 2) + "/" + hash + ".png"))
+            throw new IOException("Texture asset hash mismatch: " + url);
+        return PNG_DATA_PREFIX + Base64.getEncoder().encodeToString(png);
     }
 
     static class TextureMapping {

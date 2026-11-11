@@ -38,6 +38,8 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 
 @RequiredArgsConstructor
 public class FileItemStorage implements ItemStorage {
@@ -55,6 +57,29 @@ public class FileItemStorage implements ItemStorage {
         FileHelper.createDirectories(folder);
         return compression.compress(Files.newOutputStream(file,
                 StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE));
+    }
+
+    @Override
+    public void write(byte[] data) throws IOException {
+        if (!atomic) {
+            ItemStorage.super.write(data);
+            return;
+        }
+        Path folder = file.toAbsolutePath().normalize().getParent();
+        FileHelper.createDirectories(folder);
+        Path staged = Files.createTempFile(folder, file.getFileName() + ".", ".filepart");
+        try {
+            try (OutputStream out = compression.compress(Files.newOutputStream(staged))) {
+                out.write(data);
+            }
+            try {
+                Files.move(staged, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(staged, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(staged);
+        }
     }
 
     @Override

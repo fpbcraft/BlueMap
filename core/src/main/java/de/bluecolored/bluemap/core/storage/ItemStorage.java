@@ -39,6 +39,13 @@ public interface ItemStorage {
      */
     OutputStream write() throws IOException;
 
+    /** Publishes a complete payload. File storage stages the entire write before replacement when atomic writes are enabled. */
+    default void write(byte[] data) throws IOException {
+        try (OutputStream out = write()) {
+            out.write(data);
+        }
+    }
+
     /**
      * Returns a {@link CompressedInputStream} that can be used to read the item-data from this storage
      * or null if there is nothing stored.
