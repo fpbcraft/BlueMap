@@ -60,48 +60,47 @@ export class TileLoader {
         let tileUrl = this.tilePath + pathFromCoords(tileX, tileZ) + '.prbm';
 
         return new Promise((resolve, reject) => {
-            this.fileLoader.load(tileUrl + '?' + this.tileCacheHash,
-                async data => {
+            this.fileLoader.load(tileUrl + '?' + this.tileCacheHash, resolve, () => {}, reject);
+        }).then(async data => {
+            let geometry;
+            try {
+                await this.loadBlocker();
+                if (cancelCheck()){
+                    throw {status: "cancelled"};
+                }
 
-                    await this.loadBlocker();
+                geometry = this.bufferGeometryLoader.parse(data);
+
+                // PRBM groups carry the texture/material index. Hydrate only the
+                // materials actually referenced by this tile before creating the mesh.
+                if (Array.isArray(this.material) && typeof this.material.ensureMaterials === "function") {
+                    let materialIndices = geometry.groups.length > 0
+                        ? new Set(geometry.groups.map(group => group.materialIndex))
+                        : new Set([0]);
+                    await this.material.ensureMaterials(materialIndices);
                     if (cancelCheck()){
-                        reject({status: "cancelled"});
-                        return;
+                        throw {status: "cancelled"};
                     }
+                }
 
-                    let geometry = this.bufferGeometryLoader.parse(data);
+                let object = new Mesh(geometry, this.material);
 
-                    // PRBM groups carry the texture/material index. Hydrate only the
-                    // materials actually referenced by this tile before creating the mesh.
-                    if (Array.isArray(this.material) && typeof this.material.ensureMaterials === "function") {
-                        let materialIndices = geometry.groups.length > 0
-                            ? new Set(geometry.groups.map(group => group.materialIndex))
-                            : new Set([0]);
-                        await this.material.ensureMaterials(materialIndices);
-                        if (cancelCheck()){
-                            reject({status: "cancelled"});
-                            return;
-                        }
-                    }
+                let tileSize = this.tileSettings.tileSize;
+                let translate = this.tileSettings.translate;
+                let scale = this.tileSettings.scale;
+                object.position.set(tileX * tileSize.x + translate.x, 0, tileZ * tileSize.z + translate.z);
+                object.scale.set(scale.x, 1, scale.z);
 
-                    let object = new Mesh(geometry, this.material);
+                object.userData.tileUrl = tileUrl;
+                object.userData.tileType = "hires";
 
-                    let tileSize = this.tileSettings.tileSize;
-                    let translate = this.tileSettings.translate;
-                    let scale = this.tileSettings.scale;
-                    object.position.set(tileX * tileSize.x + translate.x, 0, tileZ * tileSize.z + translate.z);
-                    object.scale.set(scale.x, 1, scale.z);
+                object.updateMatrixWorld(true);
 
-                    object.userData.tileUrl = tileUrl;
-                    object.userData.tileType = "hires";
-
-                    object.updateMatrixWorld(true);
-
-                    resolve(object);
-                },
-                () => {},
-                reject
-            );
+                return object;
+            } catch (error) {
+                if (geometry) geometry.dispose();
+                throw error;
+            }
         });
     }
 

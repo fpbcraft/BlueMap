@@ -64,72 +64,72 @@ export class LowresTileLoader {
     load = (tileX, tileZ, cancelCheck = () => false) => {
         let tileUrl = this.tilePath + this.lod + "/" + pathFromCoords(tileX, tileZ) + '.png';
 
-        //await this.loadBlocker();
         return new Promise((resolve, reject) => {
-            this.textureLoader.load(tileUrl + '?' + this.tileCacheHash,
-                async texture => {
-                    texture.anisotropy = 1;
-                    texture.generateMipmaps = false;
-                    texture.magFilter = NearestFilter;
-                    texture.minFilter = texture.generateMipmaps ? NearestMipMapLinearFilter : NearestFilter;
-                    texture.wrapS = ClampToEdgeWrapping;
-                    texture.wrapT = ClampToEdgeWrapping;
-                    texture.flipY = false;
-                    texture.flatShading = true;
+            this.textureLoader.load(tileUrl + '?' + this.tileCacheHash, resolve, undefined, reject);
+        }).then(async texture => {
+            let material;
+            try {
+                texture.anisotropy = 1;
+                texture.generateMipmaps = false;
+                texture.magFilter = NearestFilter;
+                texture.minFilter = texture.generateMipmaps ? NearestMipMapLinearFilter : NearestFilter;
+                texture.wrapS = ClampToEdgeWrapping;
+                texture.wrapT = ClampToEdgeWrapping;
+                texture.flipY = false;
+                texture.flatShading = true;
 
-                    await this.loadBlocker();
-                    if (cancelCheck()){
-                        texture.dispose();
-                        reject({status: "cancelled"});
-                        return;
-                    }
+                await this.loadBlocker();
+                if (cancelCheck()){
+                    throw {status: "cancelled"};
+                }
 
-                    const scale = Math.pow(this.tileSettings.lodFactor, this.lod - 1);
+                const scale = Math.pow(this.tileSettings.lodFactor, this.lod - 1);
 
-                    let material = new ShaderMaterial({
-                        uniforms: {
-                            ...this.uniforms,
-                            tileSize: {
-                                value: new Vector2(this.tileSettings.tileSize.x, this.tileSettings.tileSize.z)
-                            },
-                            textureSize: {
-                                value: new Vector2(texture.image.width, texture.image.height)
-                            },
-                            textureImage: {
-                                type: 't',
-                                value: texture
-                            },
-                            lod: {
-                                value: this.lod
-                            },
-                            lodScale: {
-                                value: scale
-                            }
+                material = new ShaderMaterial({
+                    uniforms: {
+                        ...this.uniforms,
+                        tileSize: {
+                            value: new Vector2(this.tileSettings.tileSize.x, this.tileSettings.tileSize.z)
                         },
-                        vertexShader: this.vertexShader,
-                        fragmentShader: this.fragmentShader,
-                        depthWrite: true,
-                        depthTest: true,
-                        vertexColors: true,
-                        side: FrontSide,
-                        wireframe: false,
-                    });
+                        textureSize: {
+                            value: new Vector2(texture.image.width, texture.image.height)
+                        },
+                        textureImage: {
+                            type: 't',
+                            value: texture
+                        },
+                        lod: {
+                            value: this.lod
+                        },
+                        lodScale: {
+                            value: scale
+                        }
+                    },
+                    vertexShader: this.vertexShader,
+                    fragmentShader: this.fragmentShader,
+                    depthWrite: true,
+                    depthTest: true,
+                    vertexColors: true,
+                    side: FrontSide,
+                    wireframe: false,
+                });
 
-                    let object = new Mesh(this.geometry, material);
+                let object = new Mesh(this.geometry, material);
 
-                    object.position.set(tileX * this.tileSettings.tileSize.x * scale, 0, tileZ * this.tileSettings.tileSize.z * scale);
-                    object.scale.set(scale, 1, scale);
+                object.position.set(tileX * this.tileSettings.tileSize.x * scale, 0, tileZ * this.tileSettings.tileSize.z * scale);
+                object.scale.set(scale, 1, scale);
 
-                    object.userData.tileUrl = tileUrl;
-                    object.userData.tileType = "lowres";
+                object.userData.tileUrl = tileUrl;
+                object.userData.tileType = "lowres";
 
-                    object.updateMatrixWorld(true);
+                object.updateMatrixWorld(true);
 
-                    resolve(object);
-                },
-                undefined,
-                reject
-            );
+                return object;
+            } catch (error) {
+                texture.dispose();
+                if (material) material.dispose();
+                throw error;
+            }
         });
     }
 

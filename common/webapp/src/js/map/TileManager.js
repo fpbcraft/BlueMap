@@ -25,6 +25,7 @@
 import { Vector2, Scene, Group } from 'three';
 import  { Tile } from './Tile.js';
 import {alert, dispatchEvent, hashTile} from '../util/Utils.js';
+import {terrainLoads} from "./TerrainLoadQueue.mjs";
 import {TileMap} from "./TileMap";
 
 export class TileManager {
@@ -101,12 +102,15 @@ export class TileManager {
             });
         }
 
+        terrainLoads.prune();
         this.loadCloseTiles();
     }
 
     unload() {
         this.unloaded = true;
         this.removeAllTiles();
+        if (this.loadTimeout) clearTimeout(this.loadTimeout);
+        terrainLoads.prune();
     }
 
     removeFarTiles() {
@@ -133,15 +137,15 @@ export class TileManager {
     }
 
     loadCloseTiles = () => {
-        if (this.unloaded) return;
+        if (this.loadTimeout) clearTimeout(this.loadTimeout);
+        this.loadTimeout = null;
+        if (this.unloaded || this.currentlyLoading >= 2) return;
         if (!this.loadNextTile()) return;
 
         if (this.loadTimeout) clearTimeout(this.loadTimeout);
 
-        if (this.currentlyLoading < 8) {
+        if (this.currentlyLoading < 2) {
             this.loadTimeout = setTimeout(this.loadCloseTiles, 0);
-        } else {
-            this.loadTimeout = setTimeout(this.loadCloseTiles, 1000);
         }
     }
 
@@ -192,7 +196,12 @@ export class TileManager {
 
         tile = new Tile(x, z, this.handleLoadedTile, this.handleUnloadedTile);
         this.tiles.set(tileHash, tile);
-        tile.load(this.tileLoader)
+        const kind = this.tileLoader.isLowresTileLoader ? "lowres" : "hires";
+        terrainLoads.schedule(kind,
+            () => (x - this.centerTile.x) ** 2 + (z - this.centerTile.y) ** 2
+                - (kind === "lowres" ? this.tileLoader.lod * 1_000_000 : 0),
+            () => this.unloaded || this.tiles.get(tileHash) !== tile,
+            () => tile.load(this.tileLoader))
             .then(() => {
                 dispatchEvent(this.events, "bluemapTileLoaded", {
                     tileManager: this,
@@ -205,6 +214,10 @@ export class TileManager {
             .catch(error => {})
             .finally(() => {
                 this.currentlyLoading--;
+                if (!this.unloaded) {
+                    if (this.loadTimeout) clearTimeout(this.loadTimeout);
+                    this.loadTimeout = setTimeout(this.loadCloseTiles, 0);
+                }
             });
 
         return true;
