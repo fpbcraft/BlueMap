@@ -61,15 +61,15 @@ jobs:
           BUMP: ${{ inputs.bump }}
         run: |
           if [[ "$EVENT_NAME" == "push" ]]; then
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/perf/v5.7-lazy-textures || {
-              echo "::error::Release tags must point to a commit on perf/v5.7-lazy-textures."
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/v5.7-fpb || {
+              echo "::error::Release tags must point to a commit on v5.7-fpb."
               exit 1
             }
             version="$(python3 scripts/release_version.py from-tag "$GITHUB_REF_NAME")"
             create_tag=false
           else
-            if [[ "$GITHUB_REF_NAME" != "perf/v5.7-lazy-textures" ]]; then
-              echo "::error::Manual releases must run from perf/v5.7-lazy-textures."
+            if [[ "$GITHUB_REF_NAME" != "v5.7-fpb" ]]; then
+              echo "::error::Manual releases must run from v5.7-fpb."
               exit 1
             fi
             version="$(python3 scripts/release_version.py next --bump "$BUMP" --exact "$EXACT_VERSION")"

@@ -1,12 +1,12 @@
 # NeoForge 1.21.1 builds and releases
 
-The fork's deployment branch is `perf/v5.7-lazy-textures`. Its default CI builds/tests core, common and NeoForge only. `-PbluemapPlatforms=neoforge` excludes other platform projects from the settings graph; explicit task paths and configuration-on-demand avoid configuring unrelated builds. Without the property, local/upstream builds still include all platforms. The NeoForge target is now explicitly Minecraft 1.21.1 / NeoForge 21.1.248, matching Player History, rather than compiling against the old 1.21 beta while advertising several versions.
+The fork's deployment branch is `v5.7-fpb`. Its default CI builds/tests core, common and NeoForge only. `-PbluemapPlatforms=neoforge` excludes other platform projects from the settings graph; explicit task paths and configuration-on-demand avoid configuring unrelated builds. Without the property, local/upstream builds still include all platforms. The NeoForge target is now explicitly Minecraft 1.21.1 / NeoForge 21.1.248, matching Player History, rather than compiling against the old 1.21 beta while advertising several versions.
 
 ## Release controls
 
 After this workflow is merged into the default/deployment branch, open Actions → Semantic Release → Run workflow. Select patch/minor/major or supply an exact three-component SemVer. This mirrors Player History's manual semantic-version/tag workflow; it is not npm semantic-release's automatic commit classification.
 
-Successful releases publish the verified NeoForge jar to GitHub Releases and retain an Actions artifact. `RELEASE_VERSION` is validated and used consistently in jar filenames and metadata. Existing release versions are immutable. Manual releases must run from `perf/v5.7-lazy-textures`; pushed release tags must point to a commit reachable from that branch. Prerelease versions are marked prerelease. The workflow creates no tag/release until the build and tests succeed.
+Successful releases publish the verified NeoForge jar to GitHub Releases and retain an Actions artifact. `RELEASE_VERSION` is validated and used consistently in jar filenames and metadata. Existing release versions are immutable. Manual releases must run from `v5.7-fpb`; pushed release tags must point to a commit reachable from that branch. Prerelease versions are marked prerelease. The workflow creates no tag/release until the build and tests succeed.
 
 The version helper interprets legacy reachable tags such as `v5.7` as baseline 5.7.0, so the first patch defaults to 5.7.1. Unrelated newer upstream master tags do not advance the production version. Exact versions still require complete SemVer. Branch development artifacts use `<reachable-version>-dev.<sha>`.
 
