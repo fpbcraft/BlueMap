@@ -13,6 +13,14 @@ fun Project.gitClean(): Boolean {
 }
 
 fun Project.gitVersion(): String {
+    providers.environmentVariable("RELEASE_VERSION").orNull?.let { releaseVersion ->
+        require(Regex("""(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?""").matches(releaseVersion)) {
+            "RELEASE_VERSION must be a semantic version"
+        }
+        logger.lifecycle("${project.name} version: $releaseVersion")
+        return releaseVersion
+    }
+
     val lastTag = if (runCommand("git tag", "").isEmpty()) "" else runCommand("git describe --tags --abbrev=0", "")
     val lastVersion = if (lastTag.isEmpty()) "0.0" else lastTag.substring(1) // remove the leading 'v'
     val commits = runCommand("git rev-list --count $lastTag..HEAD", "0")
